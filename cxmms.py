@@ -13,6 +13,7 @@
 #  Change Logging Style
 #  Search Function
 #  Fixed Bug regarding scroll bar
+#  Include better song Searching
 #
 # And yes, it might not work for you ? :)
 
