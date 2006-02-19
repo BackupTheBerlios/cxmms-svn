@@ -106,6 +106,16 @@ class xmms_main_window:
 			key["left"] : lambda : xmms.jump_to_time(max(0,xmms.get_output_time()-5000))
 		};
 
+	def get_key(self):
+		# select() rocks, timeout == 1 sec
+		(read, write, err) = select.select([0], [], [], 1)
+		# if any key pressed
+		if 0 in read:
+			key = self.win.getch()
+			log("key pressed 0x%02x\n" % key)
+			return key
+		return None
+	
 	def songs_that_match(self,string):
 		songs = []
 		for i in range(xmms.get_playlist_length()):
@@ -200,29 +210,23 @@ class xmms_main_window:
 # 		# gratuitous use of lambda
 		map(lambda a: a.refresh(), self.windows)
 	
-	def keyloop(self):
+	def main_keyloop(self):
 		quit = 0
 		log("%s\n" % dir(self.timers))
 		while not quit:
 			self.update()
-			# select() rocks, timeout == 1 sec
-			(read, write, err) = select.select([0], [], [], 1)
-			# if any key pressed
-			if 0 in read:
-				key = self.win.getch()
-				if key == ord('q'):
-					quit = 1
-				else:
-					log("key pressed 0x%02x\n" % key)
-					if self.keymaps.has_key(key):
-						self.keymaps[key]()
+			key = self.get_key()
+			if key == ord('q'):
+				quit = 1
+			if self.keymaps.has_key(key):
+				self.keymaps[key]()
 
 def main(stdscr):
 	curses.savetty()
 	try:
 		logo(stdscr)
 		w = xmms_main_window(stdscr)
-		w.keyloop()
+		w.main_keyloop()
 	finally:
 		curses.resetty()
 
