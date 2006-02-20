@@ -21,7 +21,7 @@ import xmms, curses
 import select
 import sys
 
-debug = 1
+debug = False
 
 def key_strokes():
 	# This Corresponds to each Key Stroke's ASCII Value
@@ -43,28 +43,23 @@ def key_strokes():
 	return locals()
 
 if debug:
-	class logger:
-		def __init__(self):
-			self.log = open("/tmp/cxmms.log", "w")
-		
-		def write(self, str):
-			self.log.write(str)
-			self.log.flush()
-
-	# Creates a Function called log
-	log_file = logger()
-	log = lambda a: log_file.write(a)
+	log = open('/tmp/cxmms.log','w')
 else:
 	# This Sets Log File as /dev/null if needed
-	log = lambda a: None
+	class logger:
+		def __init__(self):
+			self.write = lambda a: None
+	log = logger()
 
 def format_time (time):
+	'''Just formats the Time'''
 	if time > 3600:
 		return "%02d:%02d:%02d" % (time/3600, (time % 3600)/60, time % 60)
 	else:
 		return "%02d:%02d" % (time/60,time % 60)
 
 def logo(stdscr):
+	'''Draws the Logo'''
 	str = ".::Commandline XMMS::."
 	stdscr.insstr(3, 40-len(str)/2, str)
 	stdscr.refresh()
@@ -75,13 +70,16 @@ def logo(stdscr):
 	
 
 class xmms_main_window:
+	'''The Main Class... All work is here'''
 	def __init__(self, stdscr, top = 6,left = 10):
 		self.stdscr = stdscr
 		self.win = curses.newwin(13, 60, top, left)
 		self.win.border()
 		
+		# Gets a list of recognised key - strokes
 		self.keys = key_strokes()
 
+		# The next block represents the various widgets
 		self.timers = self.win.subwin(2, 10, top+1, left + 3)
 		self.title = self.win.subwin(3, 40, top+1, left + 15)
 		self.playtime = self.win.subwin(2, 40, top+4, left + 15)
@@ -94,6 +92,8 @@ class xmms_main_window:
 		self.windows = [self.timers, self.playtime, self.shuffle, self.volume, self.win, self.jump, self.title]
 		
 		key = self.keys
+
+		# maks the keys to their appropriate function
 		self.keymaps = {
 			key["x"] : xmms.play,
 			key["c"] : xmms.pause,
@@ -111,6 +111,7 @@ class xmms_main_window:
 		};
 
 	def get_key(self, timeout = 1):
+		'''Reads a Key from the Screen'''
 		# select() rocks, timeout == 1 sec
 		(read, write, err) = select.select([0], [], [], timeout)
 		# if any key pressed
@@ -128,6 +129,7 @@ class xmms_main_window:
 		return None
 	
 	def songs_that_match(self,string):
+		'''List of Songs with string in their song name'''
 		songs = []
 		for i in range(xmms.get_playlist_length()):
 			if string.lower() in xmms.get_playlist_title(i).lower():
@@ -140,9 +142,8 @@ class xmms_main_window:
 		self.jump.insstr(1,2,"Search: %s" % string)
 		songs = self.songs_that_match(string)
 
+		# saves the length of the matching song list
 		self.length = len(songs)
-
-		lenght = self.length
 
 		try:
 			slice = songs[self.base:self.base+3]
@@ -150,7 +151,7 @@ class xmms_main_window:
 			slice = songs[:3]
 
 		i = 2
-
+		
 		for song in slice:
 			if self.highlight + 2 == i:
 				style = curses.A_STANDOUT
@@ -161,27 +162,33 @@ class xmms_main_window:
 
 		self.jump.border()
 
-		log(str(slice) + "\n")
+		print >> log, "slice =", str(slice)
 		
+		# return the song number, or -1
 		try: 
 			return slice[self.highlight]
 		except:
 			return -1
 	
 	def search(self):
+		'''This function searches, and plays songs if asked'''
 		self.jump.clear()
 		string = ""
-		self.highlight = 0
+
+		# self.base is the first drawn song in jump window
+		# self.highlight is the highlighted song
 		self.base = 0
+		self.highlight = 0
+
 		# if any key pressed
 		while True:
 			song = self.draw_jump(string)
-			log("song returned %d\n" % song)
+			print >> log, "song returned %d\n" % song
 			self.update()
 			# select() rocks, timeout == 1 sec
 			key = self.get_key()
 			if key:
-				log("key pressed %s\n" % str(key))
+				print >> log, "key pressed %s\n" % str(key)
 				if key == self.keys["esc"]:
 					self.jump.clear()
 					return
@@ -220,6 +227,7 @@ class xmms_main_window:
 					
 
 	def toggle_shuffle(self):
+		'''Simply Toggles the shuffle function'''
 		self.shuffle.clear()
 		if xmms.is_shuffle():
 			self.shuffle.insstr(0,0," ")
@@ -228,6 +236,9 @@ class xmms_main_window:
 		xmms.toggle_shuffle()
 
 	def update(self):
+		'''Updates all windows'''
+
+		# This block gets variables, like time, number, title. etc...
 		time = xmms.get_output_time()/1000
 		num = xmms.get_playlist_pos()
 		title = xmms.get_playlist_title(num)
@@ -252,6 +263,7 @@ class xmms_main_window:
 		v = xmms.get_main_volume()
 		self.volume.insstr(0,0, 'Vol: %2d' % (v))
 
+		# draws the volume bar
 		v = int(round(v / 10))
 		for i in range(0, 5):
 			if (i * 2 < v):
@@ -263,11 +275,12 @@ class xmms_main_window:
 		map(lambda a: a.refresh(), self.windows)
 	
 	def main_keyloop(self):
+		'''Main Loop'''
 		while True:
 			self.update()
 			key = self.get_key()
 			if key:
-				log("key pressed %s\n" % str(key))
+				print >> log, "key pressed %s\n" % str(key)
 			if self.keymaps.has_key(key):
 				self.keymaps[key]()
 
@@ -280,4 +293,5 @@ def main(stdscr):
 	finally:
 		curses.resetty()
 
-curses.wrapper(main)
+if __name__ == '__main__':
+	curses.wrapper(main)
