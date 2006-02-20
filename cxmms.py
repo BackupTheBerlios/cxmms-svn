@@ -19,8 +19,9 @@
 
 import xmms, curses
 import select
+import sys
 
-debug = 0
+debug = 1
 
 def key_strokes():
 	# This Corresponds to each Key Stroke's ASCII Value
@@ -31,13 +32,14 @@ def key_strokes():
 	b = ord("b")
 	j = ord("j")
 	s = ord("s")
-	esc = 0x1b
-	up = 0x41
-	down = 0x42
-	right = 0x43
-	left = 0x44
-	enter = 0x0a
-	backspace = 0x08
+	q = ord("q")
+	esc = (27, None)
+	up = (27, 79, 65)
+	down = (27, 79, 66)
+	right = (27, 79, 67)
+	left = (27, 79, 68)
+	enter = 10
+	backspace = 127 
 	return locals()
 
 if debug:
@@ -100,20 +102,29 @@ class xmms_main_window:
 			key["b"] : xmms.playlist_next,
 			key["s"] : self.toggle_shuffle,
 			key["j"] : self.search,
+			key["q"] : sys.exit,
+			key["esc"] : sys.exit,
 			key["up"] : lambda : xmms.set_main_volume(min(100, xmms.get_main_volume() + 10)),
 			key["down"] : lambda : xmms.set_main_volume(max(0, xmms.get_main_volume() - 10)),
 			key["right"] : lambda : xmms.jump_to_time(xmms.get_output_time()+5000),
 			key["left"] : lambda : xmms.jump_to_time(max(0,xmms.get_output_time()-5000))
 		};
 
-	def get_key(self):
+	def get_key(self, timeout = 1):
 		# select() rocks, timeout == 1 sec
-		(read, write, err) = select.select([0], [], [], 1)
+		(read, write, err) = select.select([0], [], [], timeout)
 		# if any key pressed
 		if 0 in read:
 			key = self.win.getch()
-			log("key pressed 0x%02x\n" % key)
-			return key
+			
+			# Checks specially for Arrow Keys
+			if key == 0x1b:
+				next = self.get_key(0)
+				if next == 79 or next == 91:
+					next = self.get_key(0)
+					return (27, 79, next)
+				return(key,next)
+			return int(key)
 		return None
 	
 	def songs_that_match(self,string):
@@ -124,48 +135,89 @@ class xmms_main_window:
 		return songs
 	
 	def draw_jump(self,string):
-		'''This Draws Jump.... But also returns next Songs Matching Query'''
+		'''This Draws Jump.... But also returns selected song'''
 		self.jump.clear()
 		self.jump.insstr(1,2,"Search: %s" % string)
 		songs = self.songs_that_match(string)
+
+		self.length = len(songs)
+
+		lenght = self.length
+
+		try:
+			slice = songs[self.base:self.base+3]
+		except:
+			slice = songs[:3]
+
 		i = 2
-		for j in songs[:3]:
-			if i == 2:
+
+		for song in slice:
+			if self.highlight + 2 == i:
 				style = curses.A_STANDOUT
 			else:
 				style = curses.A_NORMAL
-			self.jump.insstr(i,2,xmms.get_playlist_title(j)[:42],style)
+			self.jump.insstr(i,2,xmms.get_playlist_title(song)[:42],style)
 			i = i + 1
+
 		self.jump.border()
+
+		log(str(slice) + "\n")
+		
 		try: 
-			return songs[0]
+			return slice[self.highlight]
 		except:
 			return -1
 	
 	def search(self):
 		self.jump.clear()
 		string = ""
+		self.highlight = 0
+		self.base = 0
 		# if any key pressed
 		while True:
 			song = self.draw_jump(string)
+			log("song returned %d\n" % song)
 			self.update()
 			# select() rocks, timeout == 1 sec
-			(read, write, err) = select.select([0], [], [], 1)
-			if 0 in read:
-				key = self.win.getch()
-				log("key pressed 0x%02x\n" % key)
+			key = self.get_key()
+			if key:
+				log("key pressed %s\n" % str(key))
 				if key == self.keys["esc"]:
 					self.jump.clear()
 					return
-				if key == self.keys["enter"]:
+					
+				elif key == self.keys["enter"]:
 					if song != -1:
 						xmms.set_playlist_pos(song)
 						self.jump.clear()
 						return
-				if key == self.keys["backspace"]:
+					
+				elif key == self.keys["backspace"]:
 					string = string[:-1]
+					self.base = 0
+					self.highlight = 0
+
+				elif key == self.keys["down"]:
+					if self.highlight < 2:
+						self.highlight = self.highlight + 1
+					else:
+						self.base = min(self.base + 1, self.length - 3)
+
+				elif key == self.keys["up"]:
+					if self.highlight > 0:
+						self.highlight = self.highlight - 1
+					else:
+						self.base = max(self.base - 1, 0)
+				
 				else:
-					string = string + chr(key)
+					# try used in case a non letter is passed
+					try:
+						string = string + chr(key)
+						self.base = 0
+						self.highlight = 0
+					except:
+						pass
+					
 
 	def toggle_shuffle(self):
 		self.shuffle.clear()
@@ -211,13 +263,11 @@ class xmms_main_window:
 		map(lambda a: a.refresh(), self.windows)
 	
 	def main_keyloop(self):
-		quit = 0
-		log("%s\n" % dir(self.timers))
-		while not quit:
+		while True:
 			self.update()
 			key = self.get_key()
-			if key == ord('q'):
-				quit = 1
+			if key:
+				log("key pressed %s\n" % str(key))
 			if self.keymaps.has_key(key):
 				self.keymaps[key]()
 
